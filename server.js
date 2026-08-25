@@ -12,13 +12,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
-
-// Set up template view engine so your app can use the EJS layouts
 app.set("view engine", "ejs");
-
-/* =========================
-   DATABASE CONNECTION
-========================= */
 
 const db = mysql.createPool({
     host: process.env.DB_HOST,
@@ -28,34 +22,19 @@ const db = mysql.createPool({
     port: Number(process.env.DB_PORT) || 3306,
     ssl: {
         minVersion: "TLSv1.2",
-        rejectUnauthorized: true // Explicitly required by TiDB Cloud secure public endpoints
+        rejectUnauthorized: true
     }
 });
-
-/* =========================
-   TEST DATABASE
-========================= */
 
 app.get("/test-db", async (req, res) => {
     try {
         const [result] = await db.query("SELECT 1 AS test");
-        res.json({
-            message: "Database connected successfully!",
-            result: result
-        });
+        res.json({ message: "Database connected successfully!", result });
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Database connection failed",
-            error: error.message
-        });
+        res.status(500).json({ message: "Database connection failed", error: error.message });
     }
 });
-
-
-/* =========================
-   HOME (DASHBOARD)
-========================= */
 
 app.get("/", async (req, res) => {
     try {
@@ -64,50 +43,30 @@ app.get("/", async (req, res) => {
 
         if (req.user && req.user.id) {
             userName = req.user.name || "Student";
-            const [rows] = await db.execute(
-                "SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC",
-                [req.user.id]
-            );
+            const [rows] = await db.execute("SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC", [req.user.id]);
             tasks = rows;
         } else {
-            // Fallback: If no user session is active, fetch tasks for default profile ID 1
-            const [rows] = await db.execute(
-                "SELECT * FROM tasks WHERE user_id = 1 ORDER BY id DESC"
-            );
+            const [rows] = await db.execute("SELECT * FROM tasks WHERE user_id = 1 ORDER BY id DESC");
             tasks = rows;
         }
 
-        res.render("index", {
-            tasks: tasks,
-            user: {
-                name: userName
-            }
-        });
+        res.render("index", { tasks: tasks, user: { name: userName } });
     } catch (error) {
         console.error("Dashboard compilation failed:", error);
-        res.status(500).send("Internal Server Error: Failed to render dashboard.");
+        res.status(500).send("Internal Server Error");
     }
 });
 
-
-/* =========================
-   TASK MANAGEMENT ROUTES
-========================= */
-
-// 1. OPEN ADD TASK PAGE: Displays your input form layout on GET requests
 app.get("/add-task", (req, res) => {
     try {
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
-        res.render("add-task", { 
-            user: { name: userName } 
-        });
+        res.render("add-task", { user: { name: userName } });
     } catch (error) {
-        console.error("Failed to render add-task layout form:", error);
-        res.status(500).send("Error loading the add task page. Make sure 'views/add-task.ejs' exists.");
+        console.error(error);
+        res.status(500).send("Error loading add task page.");
     }
 });
 
-// 2. SUBMIT NEW TASK: Handles inbound database form submission metrics
 app.post("/add-task", async (req, res) => {
     try {
         const { title, description } = req.body;
@@ -117,46 +76,26 @@ app.post("/add-task", async (req, res) => {
             return res.status(400).send("Task title is required.");
         }
 
-        await db.execute(
-            "INSERT INTO tasks (user_id, title, description) VALUES (?, ?, ?)",
-            [userId, title, description || ""]
-        );
-
+        await db.execute("INSERT INTO tasks (user_id, title, description) VALUES (?, ?, ?)", [userId, title, description || ""]);
         res.redirect("/");
     } catch (error) {
-        console.error("Failed to add task:", error);
-        res.status(500).json({ 
-            status: "Database Task Insertion Failed",
-            errorMessage: error.message 
-        });
+        console.error(error);
+        res.status(500).json({ status: "Database Task Insertion Failed", errorMessage: error.message });
     }
 });
 
-// 3. DELETE TASK: Removes designated records from storage securely
 app.post("/delete-task/:id", async (req, res) => {
     try {
         const taskId = req.params.id;
         const userId = (req.user && req.user.id) ? req.user.id : 1; 
 
-        await db.execute(
-            "DELETE FROM tasks WHERE id = ? AND user_id = ?",
-            [taskId, userId]
-        );
-
+        await db.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", [taskId, userId]);
         res.redirect("/");
     } catch (error) {
-        console.error("Failed to delete task:", error);
-        res.status(500).json({ 
-            status: "Database Deletion Failed",
-            errorMessage: error.message 
-        });
+        console.error(error);
+        res.status(500).json({ status: "Database Deletion Failed", errorMessage: error.message });
     }
 });
-
-
-/* =========================
-   REGISTER
-========================= */
 
 app.post("/api/register", async (req, res) => {
     try {
@@ -165,114 +104,56 @@ app.post("/api/register", async (req, res) => {
         const password = String(req.body.password || "");
 
         if (!name || !email || !password) {
-            return res.status(400).json({
-                message: "All fields are required"
-            });
+            return res.status(400).json({ message: "All fields are required" });
         }
 
-        const [existingUsers] = await db.execute(
-            "SELECT id FROM users WHERE email = ?",
-            [email]
-        );
-
+        const [existingUsers] = await db.execute("SELECT id FROM users WHERE email = ?", [email]);
         if (existingUsers.length > 0) {
-            return res.status(400).json({
-                message: "Email already registered"
-            });
+            return res.status(400).json({ message: "Email already registered" });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
-
-        await db.execute(
-            `INSERT INTO users (name, email, password) VALUES (?, ?, ?)`,
-            [name, email, hashedPassword]
-        );
-
-        res.json({
-            message: "Registration successful"
-        });
+        await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
+        res.json({ message: "Registration successful" });
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Registration failed"
-        });
+        res.status(500).json({ message: "Registration failed" });
     }
 });
-
-
-/* =========================
-   LOGIN
-========================= */
 
 app.post("/api/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
         const password = String(req.body.password || "");
 
-        const [users] = await db.execute(
-            "SELECT * FROM users WHERE email = ?",
-            [email]
-        );
-
+        const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
         if (users.length === 0) {
-            return res.status(401).json({
-                message: "Invalid email or password"
-            });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
-
         if (!passwordMatch) {
-            return res.status(401).json({
-                message: "Invalid email or password"
-            });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
-        const token = jwt.sign(
-            { id: user.id, email: user.email, name: user.name },
-            process.env.JWT_SECRET,
-            { expiresIn: "7d" }
-        );
-
-        res.json({
-            message: "Login successful",
-            token: token,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email
-            }
-        });
+        const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, process.env.JWT_SECRET, { expiresIn: "7d" });
+        res.json({ message: "Login successful", token, user: { id: user.id, name: user.name, email: user.email } });
     } catch (error) {
-        console.error("Login route crashed:", error);
-        res.status(500).json({
-            message: "Login processing crash",
-            error: error.message
-        });
+        console.error(error);
+        res.status(500).json({ message: "Login processing crash", error: error.message });
     }
 });
 
-
-/* =========================
-   AUTHENTICATION MIDDLEWARE
-========================= */
-
 function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
-
     if (!authHeader) {
-        return res.status(401).json({
-            message: "Authentication required"
-        });
+        return res.status(401).json({ message: "Authentication required" });
     }
 
     const [scheme, token] = authHeader.split(" ");
-
     if (scheme !== "Bearer" || !token) {
-        return res.status(401).json({
-            message: "Invalid token"
-        });
+        return res.status(401).json({ message: "Invalid token" });
     }
 
     try {
@@ -280,85 +161,52 @@ function authenticate(req, res, next) {
         req.user = decoded;
         next();
     } catch (error) {
-        return res.status(401).json({
-            message: "Invalid or expired token"
-        });
+        return res.status(401).json({ message: "Invalid or expired token" });
     }
 }
 
-
-/* =========================
-   GET USER
-========================= */
-
 app.get("/api/user", authenticate, async (req, res) => {
     try {
-        const [users] = await db.execute(
-            `SELECT id, name, email FROM users WHERE id = ?`,
-            [req.user.id]
-        );
-
+        const [users] = await db.execute("SELECT id, name, email FROM users WHERE id = ?", [req.user.id]);
         if (users.length === 0) {
-            return res.status(404).json({
-                message: "User not found"
-            });
+            return res.status(404).json({ message: "User not found" });
         }
-
         res.json(users[0]);
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Failed to get user"
-        });
+        res.status(500).json({ message: "Failed to get user" });
     }
 });
-
-
-/* =========================
-   ADD TRANSACTION
-========================= */
 
 app.post("/api/transactions", authenticate, async (req, res) => {
     try {
         const { type, category, description, amount, transaction_date } = req.body;
-
         if (!type || !category || !transaction_date || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-            return res.status(400).json({
-                message: "Please fill all required fields"
-            });
-        }
-
-        if (type !== "income" && type !== "expense") {
-            return res.status(400).json({
-                message: "Invalid transaction type"
-            });
+            return res.status(400).json({ message: "Please fill all required fields" });
         }
 
         await db.execute(
-            `INSERT INTO transactions (user_id, type, category, description, amount, transaction_date)
-            VALUES (?, ?, ?, ?, ?, ?)`,
+            "INSERT INTO transactions (user_id, type, category, description, amount, transaction_date) VALUES (?, ?, ?, ?, ?, ?)",
             [req.user.id, type, category, description || "", amount, transaction_date]
         );
-
-        res.json({
-            message: "Transaction added successfully"
-        });
+        res.json({ message: "Transaction added successfully" });
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Failed to add transaction"
-        });
+        res.status(500).json({ message: "Failed to add transaction" });
     }
 });
 
-
-/* =========================
-   GET TRANSACTIONS
-========================= */
-
 app.get("/api/transactions", authenticate, async (req, res) => {
     try {
-        const [transactions] = await db.execute(
-            `SELECT id, type, category, description, amount, transaction_date 
-             FROM transactions 
-             WHERE user_id = ? 
+        const [transactions] = await db.execute("SELECT id, type, category, description, amount, transaction_date FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC", [req.user.id]);
+        res.json(transactions);
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Failed to fetch transactions" });
+    }
+});
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log("Server is running successfully on port " + PORT);
+});
