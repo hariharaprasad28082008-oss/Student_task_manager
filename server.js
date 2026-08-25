@@ -201,7 +201,7 @@ app.post("/api/register", async (req, res) => {
 
 
 /* =========================
-   LOGIN (FIXED ARRAY ACCESS VALUE)
+   LOGIN
 ========================= */
 
 app.post("/api/login", async (req, res) => {
@@ -220,7 +220,6 @@ app.post("/api/login", async (req, res) => {
             });
         }
 
-        // FIXED: Extract row item out of array storage mapping cleanly
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -360,3 +359,6 @@ app.post("/api/transactions", authenticate, async (req, res) => {
 app.get("/api/transactions", authenticate, async (req, res) => {
     try {
         const [transactions] = await db.execute(
+            `SELECT id, type, category, description, amount, transaction_date 
+             FROM transactions 
+             WHERE user_id = ? 
