@@ -61,23 +61,21 @@ function authenticate(req, res, next) {
    VISUAL PAGE ROUTING (EJS VIEWS)
 ========================= */
 
-// HOME (DASHBOARD)
+// HOME (DASHBOARD) - FIXED: Redirects to Login screen first if not signed in
 app.get("/", async (req, res) => {
-    try {
-        let tasks = [];
-        let userName = "Student";
+    if (!req.user || !req.user.id) {
+        return res.redirect("/login");
+    }
 
-        if (req.user && req.user.id) {
-            userName = req.user.name || "Student";
-            const [rows] = await db.execute(
-                "SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC",
-                [req.user.id]
-            );
-            tasks = rows;
-        }
+    try {
+        const userName = req.user.name || "Student";
+        const [rows] = await db.execute(
+            "SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC",
+            [req.user.id]
+        );
 
         res.render("index", {
-            tasks: tasks || [],
+            tasks: rows || [],
             user: { name: userName }
         });
     } catch (error) {
@@ -286,4 +284,3 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running smoothly on port ${PORT}`);
 });
-
