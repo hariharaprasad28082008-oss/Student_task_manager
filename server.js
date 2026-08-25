@@ -30,19 +30,16 @@ const db = mysql.createPool({
    VIEW TEMPLATE RENDERING ROUTES
 ========================= */
 
-// 1. DASHBOARD (ROOT PATH): Now safely handles standard browser views
 app.get("/", async (req, res) => {
     try {
         let tasks = [];
         let userName = "Student";
 
-        // If your server is checking cookies or session states, it reads here
         if (req.user && req.user.id) {
             userName = req.user.name || "Student";
             const [rows] = await db.execute("SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC", [req.user.id]);
             tasks = rows;
         } else {
-            // Fallback for direct browser testing without full header structures
             const [rows] = await db.execute("SELECT * FROM tasks WHERE user_id = 1 ORDER BY id DESC");
             tasks = rows;
         }
@@ -54,12 +51,10 @@ app.get("/", async (req, res) => {
     }
 });
 
-// 2. LOGIN VIEW: This will be the home base screen
 app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-// 3. REGISTER VIEW (FIXED): Resolves browser view targeting issues
 app.get("/register", (req, res) => {
     res.render("register"); 
 });
@@ -132,10 +127,38 @@ app.post("/logout", (req, res) => { res.redirect("/login"); });
 app.get("/logout", (req, res) => { res.redirect("/login"); });
 
 /* =========================
+   STANDARD FORM SUBMISSION ROUTE (FIXED)
+========================= */
+
+// This directly catches your HTML form when it POSTs to /login
+app.post("/login", async (req, res) => {
+    try {
+        const email = String(req.body.email || "").trim().toLowerCase();
+        const password = String(req.body.password || "");
+
+        const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
+        if (users.length === 0) {
+            return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
+        }
+
+        const user = users[0]; 
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (!passwordMatch) {
+            return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
+        }
+
+        // Successfully logged in! Redirect to the main dashboard page
+        res.redirect("/");
+    } catch (error) {
+        console.error("Form login crashed:", error);
+        res.status(500).send("Login error: " + error.message);
+    }
+});
+
+/* =========================
    API AUTHENTICATION ENDPOINTS
 ========================= */
 
-// BACKEND REGISTER ACTION (FIXED): Handles inbound browser registration form actions cleanly
 app.post("/register", async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
@@ -154,7 +177,6 @@ app.post("/register", async (req, res) => {
         const hashedPassword = await bcrypt.hash(password, 10);
         await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
         
-        // Registration complete! Direct them immediately to the clean sign-in view
         res.redirect("/login");
     } catch (error) {
         console.error("Signup failed:", error);
