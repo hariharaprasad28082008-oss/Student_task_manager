@@ -1,4 +1,3 @@
-// Add to the absolute top of server.js to catch early system boot rejections or hidden env typos
 process.on("uncaughtException", (err) => {
     console.error("❌ CRITICAL BOOT CRASH DETECTED:");
     console.error(err.name + ": " + err.message);
@@ -6,7 +5,6 @@ process.on("uncaughtException", (err) => {
 });
 
 const express = require("express");
-// FIXED: Changed from require("mysql2/promise") to require("mysql2")
 const mysql = require("mysql2"); 
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
@@ -22,7 +20,6 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 app.set("view engine", "ejs");
 
-// FIXED: Added .promise() explicitly to createPool to match your existing async/await commands cleanly
 const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -39,7 +36,6 @@ const db = mysql.createPool({
    VIEW TEMPLATE RENDERING ROUTES
 ========================= */
 
-// 1. ROOT PATH: Automatically displays your Welcome Back login layout first!
 app.get("/", (req, res) => {
     res.render("login");
 });
@@ -48,13 +44,11 @@ app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-// FIXED: Maps accurately to signup.ejs based on your directory tree layout
 const renderRegisterPage = (req, res) => { res.render("signup"); }; 
 app.get("/register", renderRegisterPage);
 app.get("/signup", renderRegisterPage);
 app.get("/sign-up", renderRegisterPage);
 
-// 2. DASHBOARD PATH: Loads securely after account verification redirects
 app.get("/dashboard", async (req, res) => {
     try {
         let tasks = [];
@@ -257,13 +251,27 @@ app.post("/api/login", async (req, res) => {
     }
 });
 
+/* =========================
+   AUTHENTICATION MIDDLEWARE (FIXED FOR CRASH PREVENTION)
+========================= */
 function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: "Authentication required" });
+    
+    // SAFE FALLBACK: If header is completely missing, return unauthorized instead of crashing
+    if (!authHeader || typeof authHeader !== "string") {
+        return res.status(401).json({ message: "Authentication required" });
+    }
 
-    const [scheme, token] = authHeader.split(" ");
-    if (scheme !== "Bearer" || !token) return res.status(401).json({ message: "Invalid token" });
+    const parts = authHeader.split(" ");
+    if (parts.length !== 2) {
+        return res.status(401).json({ message: "Token error: format must be Bearer [token]" });
+    }
+
+    const scheme = parts[0];
+    const token = parts[1];
+
+    if (!/^Bearer$/i.test(scheme) || !token) {
+        return res.status(401).json({ message: "Invalid token structure" });
+    }
 
     try {
-
-
