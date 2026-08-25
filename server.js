@@ -85,15 +85,14 @@ app.get("/", async (req, res) => {
 
 
 /* =========================
-   ADD TASK ROUTE (FIXED)
+   ADD TASK ROUTE (DIAGNOSTIC MODE)
 ========================= */
 
-// Added this endpoint to catch the form submittal directly from /add-task
 app.post("/add-task", async (req, res) => {
     try {
         const { title, description } = req.body;
         
-        // If your frontend uses standard user sessions, replace this fallback user ID
+        // If frontend lacks an active user token context, default to fallback row reference ID '1'
         const userId = (req.user && req.user.id) ? req.user.id : 1; 
 
         if (!title) {
@@ -105,11 +104,18 @@ app.post("/add-task", async (req, res) => {
             [userId, title, description || ""]
         );
 
-        // Redirect user right back to dashboard layout after successful addition
+        // Redirect safely back to root layout dashboard view upon successful injection
         res.redirect("/");
     } catch (error) {
         console.error("Failed to add task:", error);
-        res.status(500).send("Failed to save task to database.");
+        
+        // Exposes exact database rejection rules or missing structures in the browser window
+        res.status(500).json({ 
+            status: "Database Insertion Failed",
+            errorMessage: error.message, 
+            errorCode: error.code,
+            sqlState: error.sqlState
+        });
     }
 });
 
@@ -336,7 +342,7 @@ app.get("/api/transactions", authenticate, async (req, res) => {
 
 
 /* =========================
-   START SERVER (COMPLETED)
+   START SERVER 
 ========================= */
 
 const PORT = process.env.PORT || 10000;
