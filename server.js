@@ -69,6 +69,12 @@ app.get("/", async (req, res) => {
                 [req.user.id]
             );
             tasks = rows;
+        } else {
+            // Fallback: If no user session is active, fetch tasks for default profile ID 1
+            const [rows] = await db.execute(
+                "SELECT * FROM tasks WHERE user_id = 1 ORDER BY id DESC"
+            );
+            tasks = rows;
         }
 
         res.render("index", {
@@ -85,15 +91,26 @@ app.get("/", async (req, res) => {
 
 
 /* =========================
-   ADD TASK ROUTES
+   TASK MANAGMENT ROUTES
 ========================= */
 
-// 1. Handles the form submission data reliably
+// 1. OPEN ADD TASK PAGE (FIXED): Displays your input form layout on GET requests
+app.get("/add-task", (req, res) => {
+    try {
+        let userName = (req.user && req.user.name) ? req.user.name : "Student";
+        res.render("add-task", { 
+            user: { name: userName } 
+        });
+    } catch (error) {
+        console.error("Failed to render add-task layout form:", error);
+        res.status(500).send("Error loading the add task page. Make sure 'views/add-task.ejs' exists.");
+    }
+});
+
+// 2. SUBMIT NEW TASK: Handles inbound database form submission metrics
 app.post("/add-task", async (req, res) => {
     try {
         const { title, description } = req.body;
-        
-        // Use active authenticated user ID, or fallback to 1 for standalone debugging
         const userId = (req.user && req.user.id) ? req.user.id : 1; 
 
         if (!title) {
@@ -108,20 +125,32 @@ app.post("/add-task", async (req, res) => {
         res.redirect("/");
     } catch (error) {
         console.error("Failed to add task:", error);
-        
-        // Exposes exact schema failures (like missing tables) directly to the screen
         res.status(500).json({ 
             status: "Database Task Insertion Failed",
-            errorMessage: error.message, 
-            errorCode: error.code,
-            sqlState: error.sqlState
+            errorMessage: error.message 
         });
     }
 });
 
-// 2. Fixes the "Cannot GET /add-task" error by safely bouncing users back to dashboard
-app.get("/add-task", (req, res) => {
-    res.redirect("/");
+// 3. DELETE TASK: Removes designated records from storage securely
+app.post("/delete-task/:id", async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const userId = (req.user && req.user.id) ? req.user.id : 1; 
+
+        await db.execute(
+            "DELETE FROM tasks WHERE id = ? AND user_id = ?",
+            [taskId, userId]
+        );
+
+        res.redirect("/");
+    } catch (error) {
+        console.error("Failed to delete task:", error);
+        res.status(500).json({ 
+            status: "Database Deletion Failed",
+            errorMessage: error.message 
+        });
+    }
 });
 
 
@@ -172,7 +201,7 @@ app.post("/api/register", async (req, res) => {
 
 
 /* =========================
-   LOGIN (FIXED ARRAY ACCESS)
+   LOGIN
 ========================= */
 
 app.post("/api/login", async (req, res) => {
@@ -191,7 +220,6 @@ app.post("/api/login", async (req, res) => {
             });
         }
 
-        // FIXED: Extract the first record out of the rows array returned by mysql2/promise
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -334,23 +362,6 @@ app.get("/api/transactions", authenticate, async (req, res) => {
             `SELECT id, type, category, description, amount, transaction_date 
              FROM transactions 
              WHERE user_id = ? 
-             ORDER BY transaction_date DESC`,
-            [req.user.id]
-        );
-
-        res.json(transactions);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: "Failed to fetch transactions"
-        });
-    }
-});
-
-
-/* =========================
-   START SERVER
-========================= */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
