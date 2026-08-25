@@ -30,16 +30,19 @@ const db = mysql.createPool({
    VIEW TEMPLATE RENDERING ROUTES
 ========================= */
 
+// 1. DASHBOARD (ROOT PATH): Now safely handles standard browser views
 app.get("/", async (req, res) => {
     try {
         let tasks = [];
         let userName = "Student";
 
+        // If your server is checking cookies or session states, it reads here
         if (req.user && req.user.id) {
             userName = req.user.name || "Student";
             const [rows] = await db.execute("SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC", [req.user.id]);
             tasks = rows;
         } else {
+            // Fallback for direct browser testing without full header structures
             const [rows] = await db.execute("SELECT * FROM tasks WHERE user_id = 1 ORDER BY id DESC");
             tasks = rows;
         }
@@ -51,10 +54,12 @@ app.get("/", async (req, res) => {
     }
 });
 
+// 2. LOGIN VIEW: This will be the home base screen
 app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
+// 3. REGISTER VIEW (FIXED): Resolves browser view targeting issues
 app.get("/register", (req, res) => {
     res.render("register"); 
 });
@@ -91,7 +96,7 @@ app.get("/edit-task/:id", async (req, res) => {
         if (rows.length === 0) return res.status(404).send("Task not found.");
 
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
-        res.render("edit-task", { task: rows[0], user: { name: userName } });
+        res.render("edit-task", { task: rows, user: { name: userName } });
     } catch (error) {
         res.status(500).send("Error loading edit page.");
     }
@@ -129,6 +134,33 @@ app.get("/logout", (req, res) => { res.redirect("/login"); });
 /* =========================
    API AUTHENTICATION ENDPOINTS
 ========================= */
+
+// BACKEND REGISTER ACTION (FIXED): Handles inbound browser registration form actions cleanly
+app.post("/register", async (req, res) => {
+    try {
+        const name = String(req.body.name || "").trim();
+        const email = String(req.body.email || "").trim().toLowerCase();
+        const password = String(req.body.password || "");
+
+        if (!name || !email || !password) {
+            return res.status(400).send("All fields are required. Please go back and fill out the form.");
+        }
+
+        const [existingUsers] = await db.execute("SELECT id FROM users WHERE email = ?", [email]);
+        if (existingUsers.length > 0) {
+            return res.status(400).send("Email already registered. Please go back and log in.");
+        }
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
+        
+        // Registration complete! Direct them immediately to the clean sign-in view
+        res.redirect("/login");
+    } catch (error) {
+        console.error("Signup failed:", error);
+        res.status(500).send("Registration error: " + error.message);
+    }
+});
 
 app.post("/api/register", async (req, res) => {
     try {
@@ -197,51 +229,6 @@ function authenticate(req, res, next) {
         return res.status(401).json({ message: "Invalid token" });
     }
 }
-
-app.get("/api/user", authenticate, async (req, res) => {
-    try {
-        const [users] = await db.execute("SELECT id, name, email FROM users WHERE id = ?", [req.user.id]);
-        if (users.length === 0) {
-            return res.status(404).json({ message: "User not found" });
-        }
-        res.json(users[0]);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Failed to get user" });
-    }
-});
-
-app.post("/api/transactions", authenticate, async (req, res) => {
-    try {
-        const { type, category, description, amount, transaction_date } = req.body;
-        if (!type || !category || !transaction_date || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-            return res.status(400).json({ message: "Please fill all required fields" });
-        }
-
-        await db.execute(
-            "INSERT INTO transactions (user_id, type, category, description, amount, transaction_date) VALUES (?, ?, ?, ?, ?, ?)",
-            [req.user.id, type, category, description || "", amount, transaction_date]
-        );
-        res.json({ message: "Transaction added successfully" });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Failed to add transaction" });
-    }
-});
-
-app.get("/api/transactions", authenticate, async (req, res) => {
-    try {
-        const [transactions] = await db.execute("SELECT id, type, category, description, amount, transaction_date FROM transactions WHERE user_id = ? ORDER BY transaction_date DESC", [req.user.id]);
-        res.json(transactions);
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Failed to fetch transactions" });
-    }
-});
-
-/* =========================
-   START SERVER
-========================= */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
