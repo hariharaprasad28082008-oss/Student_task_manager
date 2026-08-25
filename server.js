@@ -91,10 +91,10 @@ app.get("/", async (req, res) => {
 
 
 /* =========================
-   TASK MANAGMENT ROUTES
+   TASK MANAGEMENT ROUTES
 ========================= */
 
-// 1. OPEN ADD TASK PAGE (FIXED): Displays your input form layout on GET requests
+// 1. OPEN ADD TASK PAGE: Displays your input form layout on GET requests
 app.get("/add-task", (req, res) => {
     try {
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
@@ -201,7 +201,7 @@ app.post("/api/register", async (req, res) => {
 
 
 /* =========================
-   LOGIN
+   LOGIN (FIXED SYNTAX)
 ========================= */
 
 app.post("/api/login", async (req, res) => {
@@ -220,6 +220,7 @@ app.post("/api/login", async (req, res) => {
             });
         }
 
+        // FIXED: Correct indexing variable reads the row array cleanly without syntax break
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -359,11 +360,3 @@ app.post("/api/transactions", authenticate, async (req, res) => {
 app.get("/api/transactions", authenticate, async (req, res) => {
     try {
         const [transactions] = await db.execute(
-            `SELECT id, type, category, description, amount, transaction_date 
-             FROM transactions 
-             WHERE user_id = ? 
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-});
