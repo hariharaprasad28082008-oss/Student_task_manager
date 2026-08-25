@@ -109,7 +109,7 @@ app.get("/edit-task/:id", async (req, res) => {
             return res.status(404).send("Task not found.");
         }
 
-        res.render("edit-task", { task: results[0] });
+        res.render("edit-task", { task: results });
     } catch (error) {
         console.error(error);
         res.status(500).send("Error fetching task view.");
@@ -173,7 +173,7 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password");
         }
 
-        // FIXED: Extract the first user record row element out from the mysql2 result array sequence cleanly
+        // FIXED: Safely target the first single record element object inside the row index matrix
         const user = users[0];
         const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -215,7 +215,7 @@ app.get("/api/user", authenticate, async (req, res) => {
             return res.status(404).json({ message: "User not found" });
         }
 
-        res.json(users[0]);
+        res.json(users);
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: "Failed to get user" });
@@ -280,6 +280,11 @@ app.get("/test-db", async (req, res) => {
 /* =========================
    START SERVER
 ========================= */
+
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log(`🚀 Server running smoothly on port ${PORT}`);
+});
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
