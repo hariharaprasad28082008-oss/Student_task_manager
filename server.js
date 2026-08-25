@@ -85,7 +85,7 @@ app.get("/", async (req, res) => {
 
 
 /* =========================
-   ADD TASK ROUTES (FIXED & PROTECTED)
+   ADD TASK ROUTES
 ========================= */
 
 // 1. Handles the form submission data reliably
@@ -172,7 +172,7 @@ app.post("/api/register", async (req, res) => {
 
 
 /* =========================
-   LOGIN (FIXED ARRAY REFERENCE)
+   LOGIN (FIXED ARRAY ACCESS)
 ========================= */
 
 app.post("/api/login", async (req, res) => {
@@ -191,7 +191,7 @@ app.post("/api/login", async (req, res) => {
             });
         }
 
-        // FIXED: Extract the first record out of the array payload safely
+        // FIXED: Extract the first record out of the rows array returned by mysql2/promise
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -349,13 +349,8 @@ app.get("/api/transactions", authenticate, async (req, res) => {
 
 
 /* =========================
-   START SERVER 
+   START SERVER
 ========================= */
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log(`Server running at http://localhost:${PORT}`);
-});
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
