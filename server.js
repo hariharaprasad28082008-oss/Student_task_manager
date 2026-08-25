@@ -55,7 +55,7 @@ app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-// FIXED: Now accurately renders your signup.ejs file from your file structure tree layout
+// FIXED: Maps accurately to signup.ejs based on your directory tree layout
 const renderRegisterPage = (req, res) => { res.render("signup"); }; 
 app.get("/register", renderRegisterPage);
 app.get("/signup", renderRegisterPage);
@@ -128,6 +128,9 @@ app.post("/delete-task/:id", async (req, res) => {
 app.post("/logout", (req, res) => { res.redirect("/login"); });
 app.get("/logout", (req, res) => { res.redirect("/login"); });
 
+/* =========================
+   STANDARD BROWSER LOGIN FORM HANDLER
+========================= */
 app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -138,6 +141,7 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
         }
 
+        // FIXED ARRAY INDEX ACCESS: Correctly references the row record out of the SQL result container
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
         if (!passwordMatch) {
@@ -183,7 +187,87 @@ app.post("/register", handleFormRegister);
 app.post("/signup", handleFormRegister);
 app.post("/sign-up", handleFormRegister);
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log("Server is running successfully on port " + PORT);
+/* =========================
+   API AUTHENTICATION ENDPOINTS
+========================= */
+
+app.post("/api/register", async (req, res) => {
+    try {
+        const name = String(req.body.name || "").trim();
+        const email = String(req.body.email || "").trim().toLowerCase();
+        const password = String(req.body.password || "");
+
+        if (!name || !email || !password) return res.status(400).json({ message: "All fields are required" });
+
+        const [existingUsers] = await db.execute("SELECT id FROM users WHERE email = ?", [email]);
+        if (existingUsers.length > 0) return res.status(400).json({ message: "Email already registered" });
+
+        const hashedPassword = await bcrypt.hash(password, 10);
+        await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
+        res.json({ message: "Registration successful" });
+    } catch (error) {
+        res.status(500).json({ message: "Registration failed" });
+    }
 });
+
+app.post("/api/login", async (req, res) => {
+    try {
+        const email = String(req.body.email || "").trim().toLowerCase();
+        const password = String(req.body.password || "");
+
+        const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
+        if (users.length === 0) {
+            return res.status(401).json({ message: "Invalid email or password" });
+        }
+
+        const user = users[0]; 
+        const passwordMatch = await bcrypt.compare(password, user.password);
+        if (!passwordMatch) {
+            return res.status(401).json({ message: "Invalid email or password" });
+        }
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, name: user.name }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: "7d" }
+        );
+
+        res.json({ 
+            message: "Login successful", 
+            token, 
+            user: { id: user.id, name: user.name, email: user.email } 
+        });
+    } catch (error) {
+        console.error("API Login crashed:", error);
+        res.status(500).json({ message: "Login processing crash", error: error.message });
+    }
+});
+
+function authenticate(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) return res.status(401).json({ message: "Authentication required" });
+
+    const [scheme, token] = authHeader.split(" ");
+    if (scheme !== "Bearer" || !token) return res.status(401).json({ message: "Invalid token" });
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return res.status(401).json({ message: "Invalid token" });
+    }
+}
+
+/* =========================
+   START SERVER (SAFE ANTI-CRASH WRAPPER)
+========================= */
+
+const PORT = process.env.PORT || 10000;
+
+// Intercepts unhandled async connection issues from hard crashing your Render container container instance
+process.on("unhandledRejection", (reason, promise) => {
+    console.error("⚠️ Prevented a startup crash due to unhandled database or system rejections:", reason);
+});
+
+app.listen(PORT, () => {
