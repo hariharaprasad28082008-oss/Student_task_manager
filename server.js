@@ -26,15 +26,9 @@ const db = mysql.createPool({
     }
 });
 
-app.get("/test-db", async (req, res) => {
-    try {
-        const [result] = await db.query("SELECT 1 AS test");
-        res.json({ message: "Database connected successfully!", result });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Database connection failed", error: error.message });
-    }
-});
+/* =========================
+   VIEW TEMPLATE RENDERING ROUTES
+========================= */
 
 app.get("/", async (req, res) => {
     try {
@@ -57,12 +51,19 @@ app.get("/", async (req, res) => {
     }
 });
 
+app.get("/login", (req, res) => {
+    res.render("login"); 
+});
+
+app.get("/register", (req, res) => {
+    res.render("register"); 
+});
+
 app.get("/add-task", (req, res) => {
     try {
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
         res.render("add-task", { user: { name: userName } });
     } catch (error) {
-        console.error(error);
         res.status(500).send("Error loading add task page.");
     }
 });
@@ -72,43 +73,27 @@ app.post("/add-task", async (req, res) => {
         const { title, description } = req.body;
         const userId = (req.user && req.user.id) ? req.user.id : 1; 
 
-        if (!title) {
-            return res.status(400).send("Task title is required.");
-        }
+        if (!title) return res.status(400).send("Task title is required.");
 
         await db.execute("INSERT INTO tasks (user_id, title, description) VALUES (?, ?, ?)", [userId, title, description || ""]);
         res.redirect("/");
     } catch (error) {
-        console.error(error);
         res.status(500).json({ status: "Database Task Insertion Failed", errorMessage: error.message });
     }
 });
-
-/* =========================
-   EDIT TASK ROUTES
-========================= */
 
 app.get("/edit-task/:id", async (req, res) => {
     try {
         const taskId = req.params.id;
         const userId = (req.user && req.user.id) ? req.user.id : 1;
-
         const [rows] = await db.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", [taskId, userId]);
 
-        if (rows.length === 0) {
-            return res.status(404).send("Task not found or unauthorized access.");
-        }
+        if (rows.length === 0) return res.status(404).send("Task not found.");
 
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
-        
-        // Pass the single matching object row (rows[0]) into your EJS template engine
-        res.render("edit-task", { 
-            task: rows[0], 
-            user: { name: userName } 
-        });
+        res.render("edit-task", { task: rows[0], user: { name: userName } });
     } catch (error) {
-        console.error("Failed to render edit-task page:", error);
-        res.status(500).send("Error loading edit page. Make sure 'views/edit-task.ejs' exists.");
+        res.status(500).send("Error loading edit page.");
     }
 });
 
@@ -118,18 +103,11 @@ app.post("/edit-task/:id", async (req, res) => {
         const { title, description } = req.body;
         const userId = (req.user && req.user.id) ? req.user.id : 1;
 
-        if (!title) {
-            return res.status(400).send("Task title is required.");
-        }
+        if (!title) return res.status(400).send("Task title is required.");
 
-        await db.execute(
-            "UPDATE tasks SET title = ?, description = ? WHERE id = ? AND user_id = ?",
-            [title, description || "", taskId, userId]
-        );
-
+        await db.execute("UPDATE tasks SET title = ?, description = ? WHERE id = ? AND user_id = ?", [title, description || "", taskId, userId]);
         res.redirect("/");
     } catch (error) {
-        console.error("Failed to update task:", error);
         res.status(500).json({ status: "Database Task Update Failed", errorMessage: error.message });
     }
 });
@@ -138,32 +116,18 @@ app.post("/delete-task/:id", async (req, res) => {
     try {
         const taskId = req.params.id;
         const userId = (req.user && req.user.id) ? req.user.id : 1; 
-
         await db.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", [taskId, userId]);
         res.redirect("/");
     } catch (error) {
-        console.error(error);
         res.status(500).json({ status: "Database Deletion Failed", errorMessage: error.message });
     }
 });
 
-/* =========================
-   LOGOUT ROUTE (FIXED)
-========================= */
-
-app.post("/logout", (req, res) => {
-    // If you add cookie management later, clear cookies here (e.g., res.clearCookie('token'))
-    res.redirect("/");
-});
-
-// Fallback handling to prevent screen crashes if someone navigates to /logout via address bar
-app.get("/logout", (req, res) => {
-    res.redirect("/");
-});
-
+app.post("/logout", (req, res) => { res.redirect("/login"); });
+app.get("/logout", (req, res) => { res.redirect("/login"); });
 
 /* =========================
-   API AUTHENTICATIONS
+   API AUTHENTICATION ENDPOINTS
 ========================= */
 
 app.post("/api/register", async (req, res) => {
@@ -172,20 +136,15 @@ app.post("/api/register", async (req, res) => {
         const email = String(req.body.email || "").trim().toLowerCase();
         const password = String(req.body.password || "");
 
-        if (!name || !email || !password) {
-            return res.status(400).json({ message: "All fields are required" });
-        }
+        if (!name || !email || !password) return res.status(400).json({ message: "All fields are required" });
 
         const [existingUsers] = await db.execute("SELECT id FROM users WHERE email = ?", [email]);
-        if (existingUsers.length > 0) {
-            return res.status(400).json({ message: "Email already registered" });
-        }
+        if (existingUsers.length > 0) return res.status(400).json({ message: "Email already registered" });
 
         const hashedPassword = await bcrypt.hash(password, 10);
         await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
         res.json({ message: "Registration successful" });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: "Registration failed" });
     }
 });
@@ -206,31 +165,36 @@ app.post("/api/login", async (req, res) => {
             return res.status(401).json({ message: "Invalid email or password" });
         }
 
-        const token = jwt.sign({ id: user.id, email: user.email, name: user.name }, process.env.JWT_SECRET, { expiresIn: "7d" });
-        res.json({ message: "Login successful", token, user: { id: user.id, name: user.name, email: user.email } });
+        const token = jwt.sign(
+            { id: user.id, email: user.email, name: user.name }, 
+            process.env.JWT_SECRET, 
+            { expiresIn: "7d" }
+        );
+
+        res.json({ 
+            message: "Login successful", 
+            token, 
+            user: { id: user.id, name: user.name, email: user.email } 
+        });
     } catch (error) {
-        console.error(error);
+        console.error("Login crashed:", error);
         res.status(500).json({ message: "Login processing crash", error: error.message });
     }
 });
 
 function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
-    if (!authHeader) {
-        return res.status(401).json({ message: "Authentication required" });
-    }
+    if (!authHeader) return res.status(401).json({ message: "Authentication required" });
 
     const [scheme, token] = authHeader.split(" ");
-    if (scheme !== "Bearer" || !token) {
-        return res.status(401).json({ message: "Invalid token" });
-    }
+    if (scheme !== "Bearer" || !token) return res.status(401).json({ message: "Invalid token" });
 
     try {
         const decoded = jwt.verify(token, process.env.JWT_SECRET);
         req.user = decoded;
         next();
     } catch (error) {
-        return res.status(401).json({ message: "Invalid or expired token" });
+        return res.status(401).json({ message: "Invalid token" });
     }
 }
 
@@ -274,6 +238,10 @@ app.get("/api/transactions", authenticate, async (req, res) => {
         res.status(500).json({ message: "Failed to fetch transactions" });
     }
 });
+
+/* =========================
+   START SERVER
+========================= */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
