@@ -201,7 +201,7 @@ app.post("/api/register", async (req, res) => {
 
 
 /* =========================
-   LOGIN (FIXED SYNTAX)
+   LOGIN (FIXED ARRAY ACCESS VALUE)
 ========================= */
 
 app.post("/api/login", async (req, res) => {
@@ -220,7 +220,7 @@ app.post("/api/login", async (req, res) => {
             });
         }
 
-        // FIXED: Correct indexing variable reads the row array cleanly without syntax break
+        // FIXED: Extract row item out of array storage mapping cleanly
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
 
