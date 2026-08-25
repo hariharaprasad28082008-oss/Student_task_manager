@@ -4,6 +4,7 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const path = require("path");
+const cookieParser = require("cookie-parser"); // ADDED: Handles token browser storage
 require("dotenv").config();
 
 const app = express();
@@ -11,6 +12,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // ADDED: Enable cookie storage middleware
 app.use(express.static(path.join(__dirname, "public")));
 
 // Set up template view engine so your app can use the EJS layouts
@@ -36,16 +38,16 @@ const db = mysql.createPool({
 ========================= */
 
 function authenticate(req, res, next) {
-    const authHeader = req.headers.authorization;
+    // FIXED: Reads token from authorization headers OR from the browser cookies
+    let token = req.cookies.token;
 
-    if (!authHeader) {
-        return res.status(401).json({ message: "Authentication required" });
+    if (!token && req.headers.authorization) {
+        const parts = req.headers.authorization.split(" ");
+        if (parts[0] === "Bearer") token = parts[1];
     }
 
-    const [scheme, token] = authHeader.split(" ");
-
-    if (scheme !== "Bearer" || !token) {
-        return res.status(401).json({ message: "Invalid token" });
+    if (!token) {
+        return res.redirect("/login");
     }
 
     try {
@@ -53,7 +55,8 @@ function authenticate(req, res, next) {
         req.user = decoded;
         next();
     } catch (error) {
-        return res.status(401).json({ message: "Invalid or expired token" });
+        res.clearCookie("token");
+        return res.redirect("/login");
     }
 }
 
@@ -61,12 +64,8 @@ function authenticate(req, res, next) {
    VISUAL PAGE ROUTING (EJS VIEWS)
 ========================= */
 
-// HOME (DASHBOARD) - Redirects to Login screen first if not signed in
-app.get("/", async (req, res) => {
-    if (!req.user || !req.user.id) {
-        return res.redirect("/login");
-    }
-
+// HOME (DASHBOARD) - Guarded by secure authentication layer
+app.get("/", authenticate, async (req, res) => {
     try {
         const userName = req.user.name || "Student";
         const [rows] = await db.execute(
@@ -95,15 +94,18 @@ app.get("/signup", (req, res) => {
 });
 
 // ADD TASK PAGE VIEW
-app.get("/add-task", (req, res) => {
+app.get("/add-task", authenticate, (req, res) => {
     res.render("add-task");
 });
 
 // EDIT TASK PAGE VIEW
-app.get("/edit-task/:id", async (req, res) => {
+app.get("/edit-task/:id", authenticate, async (req, res) => {
     try {
         const taskId = req.params.id;
-        const [results] = await db.execute("SELECT * FROM tasks WHERE id = ?", [taskId]);
+        const [results] = await db.execute(
+            "SELECT * FROM tasks WHERE id = ? AND user_id = ?", 
+            [taskId, req.user.id]
+        );
 
         if (results.length === 0) {
             return res.status(404).send("Task not found.");
@@ -154,7 +156,7 @@ app.post("/signup", async (req, res) => {
     }
 });
 
-// LOGIN METHOD
+// LOGIN METHOD - FIXED: Saves secure sessions inside browser cookies
 app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -186,6 +188,13 @@ app.post("/login", async (req, res) => {
             { expiresIn: "7d" }
         );
 
+        // FIXED: Attaches the token safely to your browser cookie storage
+        res.cookie("token", token, {
+            httpOnly: true,
+            secure: process.env.NODE_ENV === "production",
+            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        });
+
         res.redirect("/");
     } catch (error) {
         console.error(error);
@@ -195,6 +204,7 @@ app.post("/login", async (req, res) => {
 
 // LOGOUT POST ACTION
 app.post("/logout", (req, res) => {
+    res.clearCookie("token"); // Clears session completely upon user exit
     res.redirect("/login");
 });
 
