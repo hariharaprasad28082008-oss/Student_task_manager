@@ -6,7 +6,8 @@ process.on("uncaughtException", (err) => {
 });
 
 const express = require("express");
-const mysql = require("mysql2/promise");
+// FIXED: Changed from require("mysql2/promise") to require("mysql2")
+const mysql = require("mysql2"); 
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
@@ -21,6 +22,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, "public")));
 app.set("view engine", "ejs");
 
+// FIXED: Added .promise() explicitly to createPool to match your existing async/await commands cleanly
 const db = mysql.createPool({
     host: process.env.DB_HOST,
     user: process.env.DB_USER,
@@ -31,7 +33,7 @@ const db = mysql.createPool({
         minVersion: "TLSv1.2",
         rejectUnauthorized: true
     }
-});
+}).promise();
 
 /* =========================
    VIEW TEMPLATE RENDERING ROUTES
@@ -263,11 +265,5 @@ function authenticate(req, res, next) {
     if (scheme !== "Bearer" || !token) return res.status(401).json({ message: "Invalid token" });
 
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (error) {
-        return res.status(401).json({ message: "Invalid token" });
-    }
-}
+
 
