@@ -61,7 +61,7 @@ function authenticate(req, res, next) {
    VISUAL PAGE ROUTING (EJS VIEWS)
 ========================= */
 
-// HOME (DASHBOARD) - FIXED: Redirects to Login screen first if not signed in
+// HOME (DASHBOARD) - Redirects to Login screen first if not signed in
 app.get("/", async (req, res) => {
     if (!req.user || !req.user.id) {
         return res.redirect("/login");
@@ -84,22 +84,22 @@ app.get("/", async (req, res) => {
     }
 });
 
-// LOGIN PAGE
+// LOGIN PAGE VIEW
 app.get("/login", (req, res) => {
     res.render("login");
 });
 
-// SIGN UP PAGE
+// SIGN UP PAGE VIEW
 app.get("/signup", (req, res) => {
     res.render("signup");
 });
 
-// ADD TASK PAGE
+// ADD TASK PAGE VIEW
 app.get("/add-task", (req, res) => {
     res.render("add-task");
 });
 
-// EDIT TASK PAGE
+// EDIT TASK PAGE VIEW
 app.get("/edit-task/:id", async (req, res) => {
     try {
         const taskId = req.params.id;
@@ -117,18 +117,18 @@ app.get("/edit-task/:id", async (req, res) => {
 });
 
 /* =========================
-   API AUTHENTICATION ENDPOINTS
+   AUTHENTICATION ACTION ENDPOINTS
 ========================= */
 
-// REGISTER POST ACTION
-app.post("/api/register", async (req, res) => {
+// FIXED SIGN UP METHOD (Handles web form data submission directly)
+app.post("/signup", async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
         const email = String(req.body.email || "").trim().toLowerCase();
         const password = String(req.body.password || "");
 
         if (!name || !email || !password) {
-            return res.status(400).json({ message: "All fields are required" });
+            return res.status(400).send("All fields are required");
         }
 
         const [existingUsers] = await db.execute(
@@ -137,7 +137,7 @@ app.post("/api/register", async (req, res) => {
         );
 
         if (existingUsers.length > 0) {
-            return res.status(400).json({ message: "Email already registered" });
+            return res.status(400).send("Email already registered");
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -147,18 +147,22 @@ app.post("/api/register", async (req, res) => {
             [name, email, hashedPassword]
         );
 
-        res.json({ message: "Registration successful" });
+        res.redirect("/login");
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: "Registration failed" });
+        res.status(500).send("Registration failed");
     }
 });
 
-// LOGIN POST ACTION
-app.post("/api/login", async (req, res) => {
+// FIXED LOGIN METHOD (Handles web form data submission directly)
+app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
         const password = String(req.body.password || "");
+
+        if (!email || !password) {
+            return res.status(400).send("Email and password are required");
+        }
 
         const [users] = await db.execute(
             "SELECT * FROM users WHERE email = ?",
@@ -166,30 +170,30 @@ app.post("/api/login", async (req, res) => {
         );
 
         if (users.length === 0) {
-            return res.status(401).json({ message: "Invalid email or password" });
+            return res.status(401).send("Invalid email or password");
         }
 
         const user = users[0];
         const passwordMatch = await bcrypt.compare(password, user.password);
 
         if (!passwordMatch) {
-            return res.status(401).json({ message: "Invalid email or password" });
+            return res.status(401).send("Invalid email or password");
         }
 
+        // Generate token upon login success
         const token = jwt.sign(
             { id: user.id, email: user.email, name: user.name },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
-        res.json({
-            message: "Login successful",
-            token: token,
-            user: { id: user.id, name: user.name, email: user.email }
-        });
+        // Web apps typically handle route session transitions upon form redirection.
+        // For visual EJS redirects to function cleanly, you can save this JWT token 
+        // to cookie storage or transition to an express-session interface later.
+        res.redirect("/");
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: "Login failed" });
+        res.status(500).send("Login failed");
     }
 });
 
