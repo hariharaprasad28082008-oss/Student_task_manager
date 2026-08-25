@@ -32,37 +32,41 @@ const db = mysql.createPool({
 });
 
 /* =========================
-   TEST DATABASE
+   AUTHENTICATION MIDDLEWARE
 ========================= */
 
-app.get("/test-db", async (req, res) => {
-    try {
-        const [result] = await db.query("SELECT 1 AS test");
-        res.json({
-            message: "Database connected successfully!",
-            result: result
-        });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({
-            message: "Database connection failed",
-            error: error.message
-        });
-    }
-});
+function authenticate(req, res, next) {
+    const authHeader = req.headers.authorization;
 
+    if (!authHeader) {
+        return res.status(401).json({ message: "Authentication required" });
+    }
+
+    const [scheme, token] = authHeader.split(" ");
+
+    if (scheme !== "Bearer" || !token) {
+        return res.status(401).json({ message: "Invalid token" });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return res.status(401).json({ message: "Invalid or expired token" });
+    }
+}
 
 /* =========================
-   HOME (DASHBOARD)
+   VISUAL PAGE ROUTING (EJS VIEWS)
 ========================= */
 
+// HOME (DASHBOARD)
 app.get("/", async (req, res) => {
     try {
-        // Fallback variables prevent EJS from crashing if no user is signed in yet
         let tasks = [];
         let userName = "Student";
 
-        // Try to fetch tasks if an authenticated user session is detected
         if (req.user && req.user.id) {
             userName = req.user.name || "Student";
             const [rows] = await db.execute(
@@ -72,12 +76,9 @@ app.get("/", async (req, res) => {
             tasks = rows;
         }
 
-        // Render your index.ejs layout template safely with standard parameters
         res.render("index", {
-            tasks: tasks,
-            user: {
-                name: userName
-            }
+            tasks: tasks || [],
+            user: { name: userName }
         });
     } catch (error) {
         console.error("Dashboard compilation failed:", error);
@@ -85,11 +86,43 @@ app.get("/", async (req, res) => {
     }
 });
 
+// LOGIN PAGE
+app.get("/login", (req, res) => {
+    res.render("login");
+});
+
+// SIGN UP PAGE
+app.get("/signup", (req, res) => {
+    res.render("signup");
+});
+
+// ADD TASK PAGE
+app.get("/add-task", (req, res) => {
+    res.render("add-task");
+});
+
+// EDIT TASK PAGE
+app.get("/edit-task/:id", async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const [results] = await db.execute("SELECT * FROM tasks WHERE id = ?", [taskId]);
+
+        if (results.length === 0) {
+            return res.status(404).send("Task not found.");
+        }
+
+        res.render("edit-task", { task: results[0] });
+    } catch (error) {
+        console.error(error);
+        res.status(500).send("Error fetching task view.");
+    }
+});
 
 /* =========================
-   REGISTER
+   API AUTHENTICATION ENDPOINTS
 ========================= */
 
+// REGISTER POST ACTION
 app.post("/api/register", async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
@@ -97,9 +130,7 @@ app.post("/api/register", async (req, res) => {
         const password = String(req.body.password || "");
 
         if (!name || !email || !password) {
-            return res.status(400).json({
-                message: "All fields are required"
-            });
+            return res.status(400).json({ message: "All fields are required" });
         }
 
         const [existingUsers] = await db.execute(
@@ -108,9 +139,7 @@ app.post("/api/register", async (req, res) => {
         );
 
         if (existingUsers.length > 0) {
-            return res.status(400).json({
-                message: "Email already registered"
-            });
+            return res.status(400).json({ message: "Email already registered" });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -120,22 +149,14 @@ app.post("/api/register", async (req, res) => {
             [name, email, hashedPassword]
         );
 
-        res.json({
-            message: "Registration successful"
-        });
+        res.json({ message: "Registration successful" });
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Registration failed"
-        });
+        res.status(500).json({ message: "Registration failed" });
     }
 });
 
-
-/* =========================
-   LOGIN
-========================= */
-
+// LOGIN POST ACTION
 app.post("/api/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -147,18 +168,14 @@ app.post("/api/login", async (req, res) => {
         );
 
         if (users.length === 0) {
-            return res.status(401).json({
-                message: "Invalid email or password"
-            });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
         const user = users[0];
         const passwordMatch = await bcrypt.compare(password, user.password);
 
         if (!passwordMatch) {
-            return res.status(401).json({
-                message: "Invalid email or password"
-            });
+            return res.status(401).json({ message: "Invalid email or password" });
         }
 
         const token = jwt.sign(
@@ -170,58 +187,24 @@ app.post("/api/login", async (req, res) => {
         res.json({
             message: "Login successful",
             token: token,
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email
-            }
+            user: { id: user.id, name: user.name, email: user.email }
         });
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Login failed"
-        });
+        res.status(500).json({ message: "Login failed" });
     }
 });
 
+// LOGOUT POST ACTION
+app.post("/logout", (req, res) => {
+    res.redirect("/login");
+});
 
 /* =========================
-   AUTHENTICATION MIDDLEWARE
+   API TRANSACTION ENDPOINTS
 ========================= */
 
-function authenticate(req, res, next) {
-    const authHeader = req.headers.authorization;
-
-    if (!authHeader) {
-        return res.status(401).json({
-            message: "Authentication required"
-        });
-    }
-
-    const [scheme, token] = authHeader.split(" ");
-
-    if (scheme !== "Bearer" || !token) {
-        return res.status(401).json({
-            message: "Invalid token"
-        });
-    }
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (error) {
-        return res.status(401).json({
-            message: "Invalid or expired token"
-        });
-    }
-}
-
-
-/* =========================
-   GET USER
-========================= */
-
+// GET USER DETAILS
 app.get("/api/user", authenticate, async (req, res) => {
     try {
         const [users] = await db.execute(
@@ -230,39 +213,27 @@ app.get("/api/user", authenticate, async (req, res) => {
         );
 
         if (users.length === 0) {
-            return res.status(404).json({
-                message: "User not found"
-            });
+            return res.status(404).json({ message: "User not found" });
         }
 
         res.json(users[0]);
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Failed to get user"
-        });
+        res.status(500).json({ message: "Failed to get user" });
     }
 });
 
-
-/* =========================
-   ADD TRANSACTION
-========================= */
-
+// ADD TRANSACTION
 app.post("/api/transactions", authenticate, async (req, res) => {
     try {
         const { type, category, description, amount, transaction_date } = req.body;
 
         if (!type || !category || !transaction_date || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-            return res.status(400).json({
-                message: "Please fill all required fields"
-            });
+            return res.status(400).json({ message: "Please fill all required fields" });
         }
 
         if (type !== "income" && type !== "expense") {
-            return res.status(400).json({
-                message: "Invalid transaction type"
-            });
+            return res.status(400).json({ message: "Invalid transaction type" });
         }
 
         await db.execute(
@@ -271,22 +242,14 @@ app.post("/api/transactions", authenticate, async (req, res) => {
             [req.user.id, type, category, description || "", amount, transaction_date]
         );
 
-        res.json({
-            message: "Transaction added successfully"
-        });
+        res.json({ message: "Transaction added successfully" });
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Failed to add transaction"
-        });
+        res.status(500).json({ message: "Failed to add transaction" });
     }
 });
 
-
-/* =========================
-   GET TRANSACTIONS
-========================= */
-
+// GET TRANSACTIONS
 app.get("/api/transactions", authenticate, async (req, res) => {
     try {
         const [transactions] = await db.execute(
@@ -300,12 +263,20 @@ app.get("/api/transactions", authenticate, async (req, res) => {
         res.json(transactions);
     } catch (error) {
         console.error(error);
-        res.status(500).json({
-            message: "Failed to fetch transactions"
-        });
+        res.status(500).json({ message: "Failed to fetch transactions" });
     }
 });
 
+// TEST DATABASE ENDPOINT
+app.get("/test-db", async (req, res) => {
+    try {
+        const [result] = await db.query("SELECT 1 AS test");
+        res.json({ message: "Database connected successfully!", result: result });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Database connection failed", error: error.message });
+    }
+});
 
 /* =========================
    START SERVER
@@ -315,3 +286,4 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
     console.log(`🚀 Server running smoothly on port ${PORT}`);
 });
+
