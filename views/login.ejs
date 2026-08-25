@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Login</title>
+
+    <link rel="stylesheet" href="/css/style.css">
+
+</head>
+
+<body>
+
+<div class="auth-container">
+
+    <div class="auth-card">
+
+        <div class="logo">
+            🎓
+        </div>
+
+        <h1>Welcome Back</h1>
+
+        <p class="subtitle">
+            Login to your Student Task Manager
+        </p>
+
+
+        <form action="/login" method="POST">
+
+            <!-- FIXED: Linked label to input using id and for -->
+            <label for="email">Email</label>
+
+            <input
+                type="email"
+                id="email"
+                name="email"
+                placeholder="Enter your email"
+                required
+            >
+
+
+            <!-- FIXED: Linked label to input using id and for -->
+            <label for="password">Password</label>
+
+            <input
+                type="password"
+                id="password"
+                name="password"
+                placeholder="Enter your password"
+                required
+            >
+
+
+            <button
+                type="submit"
+                class="primary-button"
+            >
+                Login
+            </button>
+
+        </form>
+
+
+        <p class="auth-link">
+
+            Don't have an account?
+
+            <a href="/signup">
+                Sign Up
+            </a>
+
+        </p>
+
+    </div>
+
+</div>
+
+</body>
+
+</html>
