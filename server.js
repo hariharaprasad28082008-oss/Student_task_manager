@@ -55,8 +55,8 @@ app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-// FIXED LINK ALIASES: Catches /signup, /register, and /sign-up immediately to load register.ejs
-const renderRegisterPage = (req, res) => { res.render("register"); };
+// FIXED: Now accurately renders your signup.ejs file from your file structure tree layout
+const renderRegisterPage = (req, res) => { res.render("signup"); }; 
 app.get("/register", renderRegisterPage);
 app.get("/signup", renderRegisterPage);
 app.get("/sign-up", renderRegisterPage);
@@ -128,9 +128,6 @@ app.post("/delete-task/:id", async (req, res) => {
 app.post("/logout", (req, res) => { res.redirect("/login"); });
 app.get("/logout", (req, res) => { res.redirect("/login"); });
 
-/* =========================
-   STANDARD BROWSER LOGIN FORM HANDLER
-========================= */
 app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -185,12 +182,6 @@ const handleFormRegister = async (req, res) => {
 app.post("/register", handleFormRegister);
 app.post("/signup", handleFormRegister);
 app.post("/sign-up", handleFormRegister);
-
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => {
-    console.log("Server is running successfully on port " + PORT);
-});
-
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
