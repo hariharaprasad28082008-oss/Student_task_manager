@@ -1,3 +1,10 @@
+// Add to the absolute top of server.js to catch early system boot rejections or hidden env typos
+process.on("uncaughtException", (err) => {
+    console.error("❌ CRITICAL BOOT CRASH DETECTED:");
+    console.error(err.name + ": " + err.message);
+    console.error(err.stack);
+});
+
 const express = require("express");
 const mysql = require("mysql2/promise");
 const bcrypt = require("bcryptjs");
@@ -39,13 +46,13 @@ app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-// FIXED VIEW LINK ALIASES: Renders your signup.ejs file accurately from your directories
+// FIXED: Maps accurately to signup.ejs based on your directory tree layout
 const renderRegisterPage = (req, res) => { res.render("signup"); }; 
 app.get("/register", renderRegisterPage);
 app.get("/signup", renderRegisterPage);
 app.get("/sign-up", renderRegisterPage);
 
-// 2. DASHBOARD PATH: Moved here to load securely after account verification redirects
+// 2. DASHBOARD PATH: Loads securely after account verification redirects
 app.get("/dashboard", async (req, res) => {
     try {
         let tasks = [];
@@ -153,7 +160,6 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
         }
 
-        // Bounces user directly into the fresh /dashboard view location path seamlessly
         res.redirect("/dashboard");
     } catch (error) {
         console.error("Browser form login crash:", error);
@@ -264,10 +270,4 @@ function authenticate(req, res, next) {
         return res.status(401).json({ message: "Invalid token" });
     }
 }
-
-/* =========================
-   START SERVER (SAFE ANTI-CRASH WRAPPER)
-========================= */
-
-const PORT = process.env.PORT || 10000;
 
