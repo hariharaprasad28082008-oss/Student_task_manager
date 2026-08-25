@@ -102,7 +102,7 @@ app.get("/edit-task/:id", async (req, res) => {
         if (rows.length === 0) return res.status(404).send("Task not found.");
 
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
-        res.render("edit-task", { task: rows, user: { name: userName } });
+        res.render("edit-task", { task: rows[0], user: { name: userName } });
     } catch (error) {
         res.status(500).send("Error loading edit page.");
     }
@@ -196,75 +196,18 @@ app.post("/signup", handleFormRegister);
 app.post("/sign-up", handleFormRegister);
 
 /* =========================
-   API AUTHENTICATION ENDPOINTS (FOR FETCH JAVASCRIPT CALLS)
-========================= */
-
-app.post("/api/register", async (req, res) => {
-    try {
-        const name = String(req.body.name || "").trim();
-        const email = String(req.body.email || "").trim().toLowerCase();
-        const password = String(req.body.password || "");
-
-        if (!name || !email || !password) return res.status(400).json({ message: "All fields are required" });
-
-        const [existingUsers] = await db.execute("SELECT id FROM users WHERE email = ?", [email]);
-        if (existingUsers.length > 0) return res.status(400).json({ message: "Email already registered" });
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
-        res.json({ message: "Registration successful" });
-    } catch (error) {
-        res.status(500).json({ message: "Registration failed" });
-    }
-});
-
-app.post("/api/login", async (req, res) => {
-    try {
-        const email = String(req.body.email || "").trim().toLowerCase();
-        const password = String(req.body.password || "");
-
-        const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
-        if (users.length === 0) {
-            return res.status(401).json({ message: "Invalid email or password" });
-        }
-
-        const user = users[0]; 
-        const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) {
-            return res.status(401).json({ message: "Invalid email or password" });
-        }
-
-        const token = jwt.sign(
-            { id: user.id, email: user.email, name: user.name }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: "7d" }
-        );
-
-        res.json({ 
-            message: "Login successful", 
-            token, 
-            user: { id: user.id, name: user.name, email: user.email } 
-        });
-    } catch (error) {
-        console.error("API Login crashed:", error);
-        res.status(500).json({ message: "Login processing crash", error: error.message });
-    }
-});
-
-/* =========================
-   AUTHENTICATION MIDDLEWARE (FIXED FOR CRASH PREVENTION)
+   AUTHENTICATION MIDDLEWARE
 ========================= */
 function authenticate(req, res, next) {
     const authHeader = req.headers.authorization;
     
-    // SAFE FALLBACK: If header is completely missing, return unauthorized instead of crashing
     if (!authHeader || typeof authHeader !== "string") {
         return res.status(401).json({ message: "Authentication required" });
     }
 
     const parts = authHeader.split(" ");
     if (parts.length !== 2) {
-        return res.status(401).json({ message: "Token error: format must be Bearer [token]" });
+        return res.status(401).json({ message: "Token error" });
     }
 
     const scheme = parts[0];
@@ -275,3 +218,23 @@ function authenticate(req, res, next) {
     }
 
     try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET || "fallback_secret_key");
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return res.status(401).json({ message: "Invalid token" });
+    }
+}
+
+/* =========================
+   START SERVER
+========================= */
+const PORT = process.env.PORT || 10000;
+
+process.on("unhandledRejection", (reason) => {
+    console.error("⚠️ Prevented a runtime rejection crash:", reason);
+});
+
+app.listen(PORT, () => {
+    console.log("🚀 Server running successfully on port " + PORT);
+});
