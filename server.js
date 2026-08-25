@@ -4,7 +4,6 @@ const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 const cors = require("cors");
 const path = require("path");
-const cookieParser = require("cookie-parser"); // ADDED: Handles token browser storage
 require("dotenv").config();
 
 const app = express();
@@ -12,7 +11,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser()); // ADDED: Enable cookie storage middleware
 app.use(express.static(path.join(__dirname, "public")));
 
 // Set up template view engine so your app can use the EJS layouts
@@ -29,53 +27,55 @@ const db = mysql.createPool({
     database: process.env.DB_NAME,
     port: Number(process.env.DB_PORT) || 3306,
     ssl: {
-        minVersion: "TLSv1.2"
+        minVersion: "TLSv1.2",
+        rejectUnauthorized: true // Explicitly required by TiDB Cloud secure public endpoints
     }
 });
 
 /* =========================
-   AUTHENTICATION MIDDLEWARE
+   TEST DATABASE
 ========================= */
 
-function authenticate(req, res, next) {
-    // FIXED: Reads token from authorization headers OR from the browser cookies
-    let token = req.cookies.token;
-
-    if (!token && req.headers.authorization) {
-        const parts = req.headers.authorization.split(" ");
-        if (parts[0] === "Bearer") token = parts[1];
-    }
-
-    if (!token) {
-        return res.redirect("/login");
-    }
-
+app.get("/test-db", async (req, res) => {
     try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        next();
+        const [result] = await db.query("SELECT 1 AS test");
+        res.json({
+            message: "Database connected successfully!",
+            result: result
+        });
     } catch (error) {
-        res.clearCookie("token");
-        return res.redirect("/login");
+        console.error(error);
+        res.status(500).json({
+            message: "Database connection failed",
+            error: error.message
+        });
     }
-}
+});
+
 
 /* =========================
-   VISUAL PAGE ROUTING (EJS VIEWS)
+   HOME (DASHBOARD)
 ========================= */
 
-// HOME (DASHBOARD) - Guarded by secure authentication layer
-app.get("/", authenticate, async (req, res) => {
+app.get("/", async (req, res) => {
     try {
-        const userName = req.user.name || "Student";
-        const [rows] = await db.execute(
-            "SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC",
-            [req.user.id]
-        );
+        let tasks = [];
+        let userName = "Student";
+
+        if (req.user && req.user.id) {
+            userName = req.user.name || "Student";
+            const [rows] = await db.execute(
+                "SELECT * FROM tasks WHERE user_id = ? ORDER BY id DESC",
+                [req.user.id]
+            );
+            tasks = rows;
+        }
 
         res.render("index", {
-            tasks: rows || [],
-            user: { name: userName }
+            tasks: tasks,
+            user: {
+                name: userName
+            }
         });
     } catch (error) {
         console.error("Dashboard compilation failed:", error);
@@ -83,54 +83,51 @@ app.get("/", authenticate, async (req, res) => {
     }
 });
 
-// LOGIN PAGE VIEW
-app.get("/login", (req, res) => {
-    res.render("login");
-});
 
-// SIGN UP PAGE VIEW
-app.get("/signup", (req, res) => {
-    res.render("signup");
-});
+/* =========================
+   ADD TASK ROUTE (FIXED)
+========================= */
 
-// ADD TASK PAGE VIEW
-app.get("/add-task", authenticate, (req, res) => {
-    res.render("add-task");
-});
-
-// EDIT TASK PAGE VIEW
-app.get("/edit-task/:id", authenticate, async (req, res) => {
+// Added this endpoint to catch the form submittal directly from /add-task
+app.post("/add-task", async (req, res) => {
     try {
-        const taskId = req.params.id;
-        const [results] = await db.execute(
-            "SELECT * FROM tasks WHERE id = ? AND user_id = ?", 
-            [taskId, req.user.id]
-        );
+        const { title, description } = req.body;
+        
+        // If your frontend uses standard user sessions, replace this fallback user ID
+        const userId = (req.user && req.user.id) ? req.user.id : 1; 
 
-        if (results.length === 0) {
-            return res.status(404).send("Task not found.");
+        if (!title) {
+            return res.status(400).send("Task title is required.");
         }
 
-        res.render("edit-task", { task: results[0] });
+        await db.execute(
+            "INSERT INTO tasks (user_id, title, description) VALUES (?, ?, ?)",
+            [userId, title, description || ""]
+        );
+
+        // Redirect user right back to dashboard layout after successful addition
+        res.redirect("/");
     } catch (error) {
-        console.error(error);
-        res.status(500).send("Error fetching task view.");
+        console.error("Failed to add task:", error);
+        res.status(500).send("Failed to save task to database.");
     }
 });
 
+
 /* =========================
-   AUTHENTICATION ACTION ENDPOINTS
+   REGISTER
 ========================= */
 
-// SIGN UP METHOD
-app.post("/signup", async (req, res) => {
+app.post("/api/register", async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
         const email = String(req.body.email || "").trim().toLowerCase();
         const password = String(req.body.password || "");
 
         if (!name || !email || !password) {
-            return res.status(400).send("All fields are required");
+            return res.status(400).json({
+                message: "All fields are required"
+            });
         }
 
         const [existingUsers] = await db.execute(
@@ -139,7 +136,9 @@ app.post("/signup", async (req, res) => {
         );
 
         if (existingUsers.length > 0) {
-            return res.status(400).send("Email already registered");
+            return res.status(400).json({
+                message: "Email already registered"
+            });
         }
 
         const hashedPassword = await bcrypt.hash(password, 10);
@@ -149,22 +148,26 @@ app.post("/signup", async (req, res) => {
             [name, email, hashedPassword]
         );
 
-        res.redirect("/login");
+        res.json({
+            message: "Registration successful"
+        });
     } catch (error) {
         console.error(error);
-        res.status(500).send(`Registration failed. Error Details: ${error.message}`);
+        res.status(500).json({
+            message: "Registration failed"
+        });
     }
 });
 
-// LOGIN METHOD - FIXED: Saves secure sessions inside browser cookies
-app.post("/login", async (req, res) => {
+
+/* =========================
+   LOGIN
+========================= */
+
+app.post("/api/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
         const password = String(req.body.password || "");
-
-        if (!email || !password) {
-            return res.status(400).send("Email and password are required");
-        }
 
         const [users] = await db.execute(
             "SELECT * FROM users WHERE email = ?",
@@ -172,14 +175,18 @@ app.post("/login", async (req, res) => {
         );
 
         if (users.length === 0) {
-            return res.status(401).send("Invalid email or password");
+            return res.status(401).json({
+                message: "Invalid email or password"
+            });
         }
 
         const user = users[0];
         const passwordMatch = await bcrypt.compare(password, user.password);
 
         if (!passwordMatch) {
-            return res.status(401).send("Invalid email or password");
+            return res.status(401).json({
+                message: "Invalid email or password"
+            });
         }
 
         const token = jwt.sign(
@@ -188,31 +195,61 @@ app.post("/login", async (req, res) => {
             { expiresIn: "7d" }
         );
 
-        // FIXED: Attaches the token safely to your browser cookie storage
-        res.cookie("token", token, {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
+        res.json({
+            message: "Login successful",
+            token: token,
+            user: {
+                id: user.id,
+                name: user.name,
+                email: user.email
+            }
         });
-
-        res.redirect("/");
     } catch (error) {
         console.error(error);
-        res.status(500).send(`Login failed. Error Details: ${error.message}`);
+        res.status(500).json({
+            message: "Login failed"
+        });
     }
 });
 
-// LOGOUT POST ACTION
-app.post("/logout", (req, res) => {
-    res.clearCookie("token"); // Clears session completely upon user exit
-    res.redirect("/login");
-});
 
 /* =========================
-   API TRANSACTION ENDPOINTS
+   AUTHENTICATION MIDDLEWARE
 ========================= */
 
-// GET USER DETAILS
+function authenticate(req, res, next) {
+    const authHeader = req.headers.authorization;
+
+    if (!authHeader) {
+        return res.status(401).json({
+            message: "Authentication required"
+        });
+    }
+
+    const [scheme, token] = authHeader.split(" ");
+
+    if (scheme !== "Bearer" || !token) {
+        return res.status(401).json({
+            message: "Invalid token"
+        });
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        req.user = decoded;
+        next();
+    } catch (error) {
+        return res.status(401).json({
+            message: "Invalid or expired token"
+        });
+    }
+}
+
+
+/* =========================
+   GET USER
+========================= */
+
 app.get("/api/user", authenticate, async (req, res) => {
     try {
         const [users] = await db.execute(
@@ -221,27 +258,39 @@ app.get("/api/user", authenticate, async (req, res) => {
         );
 
         if (users.length === 0) {
-            return res.status(404).json({ message: "User not found" });
+            return res.status(404).json({
+                message: "User not found"
+            });
         }
 
         res.json(users[0]);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: "Failed to get user" });
+        res.status(500).json({
+            message: "Failed to get user"
+        });
     }
 });
 
-// ADD TRANSACTION
+
+/* =========================
+   ADD TRANSACTION
+========================= */
+
 app.post("/api/transactions", authenticate, async (req, res) => {
     try {
         const { type, category, description, amount, transaction_date } = req.body;
 
         if (!type || !category || !transaction_date || !Number.isFinite(Number(amount)) || Number(amount) <= 0) {
-            return res.status(400).json({ message: "Please fill all required fields" });
+            return res.status(400).json({
+                message: "Please fill all required fields"
+            });
         }
 
         if (type !== "income" && type !== "expense") {
-            return res.status(400).json({ message: "Invalid transaction type" });
+            return res.status(400).json({
+                message: "Invalid transaction type"
+            });
         }
 
         await db.execute(
@@ -250,14 +299,22 @@ app.post("/api/transactions", authenticate, async (req, res) => {
             [req.user.id, type, category, description || "", amount, transaction_date]
         );
 
-        res.json({ message: "Transaction added successfully" });
+        res.json({
+            message: "Transaction added successfully"
+        });
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: "Failed to add transaction" });
+        res.status(500).json({
+            message: "Failed to add transaction"
+        });
     }
 });
 
-// GET TRANSACTIONS
+
+/* =========================
+   GET TRANSACTIONS
+========================= */
+
 app.get("/api/transactions", authenticate, async (req, res) => {
     try {
         const [transactions] = await db.execute(
@@ -271,26 +328,18 @@ app.get("/api/transactions", authenticate, async (req, res) => {
         res.json(transactions);
     } catch (error) {
         console.error(error);
-        res.status(500).json({ message: "Failed to fetch transactions" });
+        res.status(500).json({
+            message: "Failed to fetch transactions"
+        });
     }
 });
 
-// TEST DATABASE ENDPOINT
-app.get("/test-db", async (req, res) => {
-    try {
-        const [result] = await db.query("SELECT 1 AS test");
-        res.json({ message: "Database connected successfully!", result: result });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Database connection failed", error: error.message });
-    }
-});
 
 /* =========================
-   START SERVER
+   START SERVER (COMPLETED)
 ========================= */
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(`🚀 Server running smoothly on port ${PORT}`);
+    console.log(`Server running at http://localhost:${PORT}`);
 });
