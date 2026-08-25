@@ -12,6 +12,8 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
+// FIXED: Setup template view engine so your app can use the EJS dashboard view
+app.set("view engine", "ejs");
 
 /* =========================
    DATABASE CONNECTION
@@ -64,7 +66,8 @@ app.get("/test-db", async (req, res) => {
 
 app.get("/", (req, res) => {
 
-    res.sendFile(path.join(__dirname, "public", "index.html"));
+    // FIXED: Switched from broken static index.html file pointer to rendering your index template dashboard
+    res.render("index");
 
 });
 
@@ -427,7 +430,7 @@ app.get(
 
         try {
 
-            // FIXED: Closed out the query, mapped parameter array, and structured output response payload safely
+            // FIXED: Completed the abrupt query truncation cutoff safely, bound array params, and returned structured results
             const [transactions] =
                 await db.execute(
                     `SELECT
@@ -463,7 +466,7 @@ app.get(
    START SERVER
 ========================= */
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-    console.log(`🚀 Server running smoothly on port ${PORT}`);
+    console.log(`Server running safely on port ${PORT}`);
 });
