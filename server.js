@@ -84,6 +84,56 @@ app.post("/add-task", async (req, res) => {
     }
 });
 
+/* =========================
+   EDIT TASK ROUTES
+========================= */
+
+app.get("/edit-task/:id", async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const userId = (req.user && req.user.id) ? req.user.id : 1;
+
+        const [rows] = await db.execute("SELECT * FROM tasks WHERE id = ? AND user_id = ?", [taskId, userId]);
+
+        if (rows.length === 0) {
+            return res.status(404).send("Task not found or unauthorized access.");
+        }
+
+        let userName = (req.user && req.user.name) ? req.user.name : "Student";
+        
+        // Pass the single matching object row (rows[0]) into your EJS template engine
+        res.render("edit-task", { 
+            task: rows[0], 
+            user: { name: userName } 
+        });
+    } catch (error) {
+        console.error("Failed to render edit-task page:", error);
+        res.status(500).send("Error loading edit page. Make sure 'views/edit-task.ejs' exists.");
+    }
+});
+
+app.post("/edit-task/:id", async (req, res) => {
+    try {
+        const taskId = req.params.id;
+        const { title, description } = req.body;
+        const userId = (req.user && req.user.id) ? req.user.id : 1;
+
+        if (!title) {
+            return res.status(400).send("Task title is required.");
+        }
+
+        await db.execute(
+            "UPDATE tasks SET title = ?, description = ? WHERE id = ? AND user_id = ?",
+            [title, description || "", taskId, userId]
+        );
+
+        res.redirect("/");
+    } catch (error) {
+        console.error("Failed to update task:", error);
+        res.status(500).json({ status: "Database Task Update Failed", errorMessage: error.message });
+    }
+});
+
 app.post("/delete-task/:id", async (req, res) => {
     try {
         const taskId = req.params.id;
@@ -96,6 +146,25 @@ app.post("/delete-task/:id", async (req, res) => {
         res.status(500).json({ status: "Database Deletion Failed", errorMessage: error.message });
     }
 });
+
+/* =========================
+   LOGOUT ROUTE (FIXED)
+========================= */
+
+app.post("/logout", (req, res) => {
+    // If you add cookie management later, clear cookies here (e.g., res.clearCookie('token'))
+    res.redirect("/");
+});
+
+// Fallback handling to prevent screen crashes if someone navigates to /logout via address bar
+app.get("/logout", (req, res) => {
+    res.redirect("/");
+});
+
+
+/* =========================
+   API AUTHENTICATIONS
+========================= */
 
 app.post("/api/register", async (req, res) => {
     try {
