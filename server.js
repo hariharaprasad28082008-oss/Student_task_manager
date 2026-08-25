@@ -55,9 +55,9 @@ app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-app.get("/register", (req, res) => {
-    res.render("register"); 
-});
+// FIXED: Both /register and /signup will now render your register.ejs page smoothly
+app.get("/register", (req, res) => { res.render("register"); });
+app.get("/signup", (req, res) => { res.render("register"); });
 
 app.get("/add-task", (req, res) => {
     try {
@@ -126,11 +126,6 @@ app.post("/delete-task/:id", async (req, res) => {
 app.post("/logout", (req, res) => { res.redirect("/login"); });
 app.get("/logout", (req, res) => { res.redirect("/login"); });
 
-/* =========================
-   STANDARD FORM SUBMISSION ROUTE (FIXED)
-========================= */
-
-// This directly catches your HTML form when it POSTs to /login
 app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -147,7 +142,6 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
         }
 
-        // Successfully logged in! Redirect to the main dashboard page
         res.redirect("/");
     } catch (error) {
         console.error("Form login crashed:", error);
@@ -156,10 +150,11 @@ app.post("/login", async (req, res) => {
 });
 
 /* =========================
-   API AUTHENTICATION ENDPOINTS
+   FORM REGISTRATION ACTION HANDLERS (FIXED ALIAS PATHS)
 ========================= */
 
-app.post("/register", async (req, res) => {
+// FIXED: Handles submissions coming from forms using action="/register" OR action="/signup"
+const handleFormRegister = async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -182,7 +177,14 @@ app.post("/register", async (req, res) => {
         console.error("Signup failed:", error);
         res.status(500).send("Registration error: " + error.message);
     }
-});
+};
+
+app.post("/register", handleFormRegister);
+app.post("/signup", handleFormRegister);
+
+/* =========================
+   API AUTHENTICATION ENDPOINTS
+========================= */
 
 app.post("/api/register", async (req, res) => {
     try {
