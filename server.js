@@ -55,9 +55,11 @@ app.get("/login", (req, res) => {
     res.render("login"); 
 });
 
-// FIXED: Both /register and /signup will now render your register.ejs page smoothly
-app.get("/register", (req, res) => { res.render("register"); });
-app.get("/signup", (req, res) => { res.render("register"); });
+// FIXED LINK ALIASES: Catches /signup, /register, and /sign-up immediately to load register.ejs
+const renderRegisterPage = (req, res) => { res.render("register"); };
+app.get("/register", renderRegisterPage);
+app.get("/signup", renderRegisterPage);
+app.get("/sign-up", renderRegisterPage);
 
 app.get("/add-task", (req, res) => {
     try {
@@ -126,6 +128,9 @@ app.post("/delete-task/:id", async (req, res) => {
 app.post("/logout", (req, res) => { res.redirect("/login"); });
 app.get("/logout", (req, res) => { res.redirect("/login"); });
 
+/* =========================
+   STANDARD BROWSER LOGIN FORM HANDLER
+========================= */
 app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -144,16 +149,14 @@ app.post("/login", async (req, res) => {
 
         res.redirect("/");
     } catch (error) {
-        console.error("Form login crashed:", error);
-        res.status(500).send("Login error: " + error.message);
+        console.error("Browser form login crash:", error);
+        res.status(500).send("Login failure endpoint error: " + error.message);
     }
 });
 
 /* =========================
-   FORM REGISTRATION ACTION HANDLERS (FIXED ALIAS PATHS)
+   STANDARD BROWSER SIGNUP FORM HANDLER
 ========================= */
-
-// FIXED: Handles submissions coming from forms using action="/register" OR action="/signup"
 const handleFormRegister = async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
@@ -181,78 +184,13 @@ const handleFormRegister = async (req, res) => {
 
 app.post("/register", handleFormRegister);
 app.post("/signup", handleFormRegister);
+app.post("/sign-up", handleFormRegister);
 
-/* =========================
-   API AUTHENTICATION ENDPOINTS
-========================= */
-
-app.post("/api/register", async (req, res) => {
-    try {
-        const name = String(req.body.name || "").trim();
-        const email = String(req.body.email || "").trim().toLowerCase();
-        const password = String(req.body.password || "");
-
-        if (!name || !email || !password) return res.status(400).json({ message: "All fields are required" });
-
-        const [existingUsers] = await db.execute("SELECT id FROM users WHERE email = ?", [email]);
-        if (existingUsers.length > 0) return res.status(400).json({ message: "Email already registered" });
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-        await db.execute("INSERT INTO users (name, email, password) VALUES (?, ?, ?)", [name, email, hashedPassword]);
-        res.json({ message: "Registration successful" });
-    } catch (error) {
-        res.status(500).json({ message: "Registration failed" });
-    }
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+    console.log("Server is running successfully on port " + PORT);
 });
 
-app.post("/api/login", async (req, res) => {
-    try {
-        const email = String(req.body.email || "").trim().toLowerCase();
-        const password = String(req.body.password || "");
-
-        const [users] = await db.execute("SELECT * FROM users WHERE email = ?", [email]);
-        if (users.length === 0) {
-            return res.status(401).json({ message: "Invalid email or password" });
-        }
-
-        const user = users[0]; 
-        const passwordMatch = await bcrypt.compare(password, user.password);
-        if (!passwordMatch) {
-            return res.status(401).json({ message: "Invalid email or password" });
-        }
-
-        const token = jwt.sign(
-            { id: user.id, email: user.email, name: user.name }, 
-            process.env.JWT_SECRET, 
-            { expiresIn: "7d" }
-        );
-
-        res.json({ 
-            message: "Login successful", 
-            token, 
-            user: { id: user.id, name: user.name, email: user.email } 
-        });
-    } catch (error) {
-        console.error("Login crashed:", error);
-        res.status(500).json({ message: "Login processing crash", error: error.message });
-    }
-});
-
-function authenticate(req, res, next) {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) return res.status(401).json({ message: "Authentication required" });
-
-    const [scheme, token] = authHeader.split(" ");
-    if (scheme !== "Bearer" || !token) return res.status(401).json({ message: "Invalid token" });
-
-    try {
-        const decoded = jwt.verify(token, process.env.JWT_SECRET);
-        req.user = decoded;
-        next();
-    } catch (error) {
-        return res.status(401).json({ message: "Invalid token" });
-    }
-}
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
