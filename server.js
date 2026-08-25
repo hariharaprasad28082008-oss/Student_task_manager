@@ -30,7 +30,23 @@ const db = mysql.createPool({
    VIEW TEMPLATE RENDERING ROUTES
 ========================= */
 
-app.get("/", async (req, res) => {
+// 1. ROOT PATH: Automatically displays your Welcome Back login layout first!
+app.get("/", (req, res) => {
+    res.render("login");
+});
+
+app.get("/login", (req, res) => {
+    res.render("login"); 
+});
+
+// FIXED VIEW LINK ALIASES: Renders your signup.ejs file accurately from your directories
+const renderRegisterPage = (req, res) => { res.render("signup"); }; 
+app.get("/register", renderRegisterPage);
+app.get("/signup", renderRegisterPage);
+app.get("/sign-up", renderRegisterPage);
+
+// 2. DASHBOARD PATH: Moved here to load securely after account verification redirects
+app.get("/dashboard", async (req, res) => {
     try {
         let tasks = [];
         let userName = "Student";
@@ -51,16 +67,6 @@ app.get("/", async (req, res) => {
     }
 });
 
-app.get("/login", (req, res) => {
-    res.render("login"); 
-});
-
-// FIXED: Maps accurately to signup.ejs based on your directory tree layout
-const renderRegisterPage = (req, res) => { res.render("signup"); }; 
-app.get("/register", renderRegisterPage);
-app.get("/signup", renderRegisterPage);
-app.get("/sign-up", renderRegisterPage);
-
 app.get("/add-task", (req, res) => {
     try {
         let userName = (req.user && req.user.name) ? req.user.name : "Student";
@@ -78,7 +84,7 @@ app.post("/add-task", async (req, res) => {
         if (!title) return res.status(400).send("Task title is required.");
 
         await db.execute("INSERT INTO tasks (user_id, title, description) VALUES (?, ?, ?)", [userId, title, description || ""]);
-        res.redirect("/");
+        res.redirect("/dashboard");
     } catch (error) {
         res.status(500).json({ status: "Database Task Insertion Failed", errorMessage: error.message });
     }
@@ -108,7 +114,7 @@ app.post("/edit-task/:id", async (req, res) => {
         if (!title) return res.status(400).send("Task title is required.");
 
         await db.execute("UPDATE tasks SET title = ?, description = ? WHERE id = ? AND user_id = ?", [title, description || "", taskId, userId]);
-        res.redirect("/");
+        res.redirect("/dashboard");
     } catch (error) {
         res.status(500).json({ status: "Database Task Update Failed", errorMessage: error.message });
     }
@@ -119,7 +125,7 @@ app.post("/delete-task/:id", async (req, res) => {
         const taskId = req.params.id;
         const userId = (req.user && req.user.id) ? req.user.id : 1; 
         await db.execute("DELETE FROM tasks WHERE id = ? AND user_id = ?", [taskId, userId]);
-        res.redirect("/");
+        res.redirect("/dashboard");
     } catch (error) {
         res.status(500).json({ status: "Database Deletion Failed", errorMessage: error.message });
     }
@@ -141,14 +147,14 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
         }
 
-        // FIXED ARRAY INDEX ACCESS: Correctly references the row record out of the SQL result container
         const user = users[0]; 
         const passwordMatch = await bcrypt.compare(password, user.password);
         if (!passwordMatch) {
             return res.status(401).send("Invalid email or password. <a href='/login'>Try again</a>");
         }
 
-        res.redirect("/");
+        // Bounces user directly into the fresh /dashboard view location path seamlessly
+        res.redirect("/dashboard");
     } catch (error) {
         console.error("Browser form login crash:", error);
         res.status(500).send("Login failure endpoint error: " + error.message);
@@ -188,7 +194,7 @@ app.post("/signup", handleFormRegister);
 app.post("/sign-up", handleFormRegister);
 
 /* =========================
-   API AUTHENTICATION ENDPOINTS
+   API AUTHENTICATION ENDPOINTS (FOR FETCH JAVASCRIPT CALLS)
 ========================= */
 
 app.post("/api/register", async (req, res) => {
@@ -265,9 +271,3 @@ function authenticate(req, res, next) {
 
 const PORT = process.env.PORT || 10000;
 
-// Intercepts unhandled async connection issues from hard crashing your Render container container instance
-process.on("unhandledRejection", (reason, promise) => {
-    console.error("⚠️ Prevented a startup crash due to unhandled database or system rejections:", reason);
-});
-
-app.listen(PORT, () => {
