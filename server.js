@@ -120,7 +120,7 @@ app.get("/edit-task/:id", async (req, res) => {
    AUTHENTICATION ACTION ENDPOINTS
 ========================= */
 
-// FIXED SIGN UP METHOD (Handles web form data submission directly)
+// SIGN UP METHOD
 app.post("/signup", async (req, res) => {
     try {
         const name = String(req.body.name || "").trim();
@@ -150,11 +150,11 @@ app.post("/signup", async (req, res) => {
         res.redirect("/login");
     } catch (error) {
         console.error(error);
-        res.status(500).send("Registration failed");
+        res.status(500).send(`Registration failed. Error Details: ${error.message}`);
     }
 });
 
-// FIXED LOGIN METHOD (Handles web form data submission directly)
+// LOGIN METHOD
 app.post("/login", async (req, res) => {
     try {
         const email = String(req.body.email || "").trim().toLowerCase();
@@ -173,6 +173,7 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password");
         }
 
+        // FIXED: Extract the first user record row element out from the mysql2 result array sequence cleanly
         const user = users[0];
         const passwordMatch = await bcrypt.compare(password, user.password);
 
@@ -180,20 +181,16 @@ app.post("/login", async (req, res) => {
             return res.status(401).send("Invalid email or password");
         }
 
-        // Generate token upon login success
         const token = jwt.sign(
             { id: user.id, email: user.email, name: user.name },
             process.env.JWT_SECRET,
             { expiresIn: "7d" }
         );
 
-        // Web apps typically handle route session transitions upon form redirection.
-        // For visual EJS redirects to function cleanly, you can save this JWT token 
-        // to cookie storage or transition to an express-session interface later.
         res.redirect("/");
     } catch (error) {
         console.error(error);
-        res.status(500).send("Login failed");
+        res.status(500).send(`Login failed. Error Details: ${error.message}`);
     }
 });
 
